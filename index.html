@@ -240,9 +240,21 @@
 
       <section id="reportsPage" class="page">
         <div class="report-grid">
-          <article class="card report-card"><span>إجمالي الإيرادات السنوية</span><strong>754,500 ر.س</strong><small>↑ 12.4% عن العام السابق</small></article>
-          <article class="card report-card"><span>إجمالي المصروفات</span><strong>128,400 ر.س</strong><small>يشمل الصيانة والتشغيل</small></article>
-          <article class="card report-card"><span>صافي الدخل</span><strong>626,100 ر.س</strong><small>هامش صافي 83%</small></article>
+          <article class="card report-card">
+            <span>الإيرادات السنوية المتوقعة</span>
+            <strong id="reportAnnualIncome">0 ر.س</strong>
+            <small id="reportPropertyCount">0 عقار</small>
+          </article>
+          <article class="card report-card">
+            <span>الدفعات المحصلة</span>
+            <strong id="reportCollected">0 ر.س</strong>
+            <small id="reportPaidCount">0 دفعة مدفوعة</small>
+          </article>
+          <article class="card report-card">
+            <span>صافي المحصل</span>
+            <strong id="reportNetIncome">0 ر.س</strong>
+            <small id="reportOverdue">المتأخرات: 0 ر.س</small>
+          </article>
         </div>
         <article class="card report-placeholder">
           <h2>التقارير التفصيلية</h2>
@@ -363,7 +375,7 @@
       </form>
     </div>
   </div>
+
   <script src="app.js"></script>
-  
 </body>
 </html>
