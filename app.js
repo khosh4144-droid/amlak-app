@@ -111,7 +111,7 @@ function renderProperties(filter=""){
           <div><strong>${p.occupied}</strong><small>مشغولة</small></div>
           <div><strong>${fmt(p.income)}</strong><small>ر.س شهريًا</small></div>
         </div>
-        <div class="row-actions" style="margin-top:12px"><button class="action-btn danger" onclick="removeProperty(${p.id})">حذف العقار</button></div>
+        <div class="row-actions" style="margin-top:12px"><button type="button" class="action-btn danger delete-property-btn" data-property-id="${p.id}">حذف العقار</button></div>
       </div>
     </article>`).join("");
 }
@@ -238,6 +238,30 @@ document.getElementById("maintenanceForm").addEventListener("submit",e=>{
 });
 
 
+
+document.addEventListener("click", function (event) {
+  const button = event.target.closest(".delete-property-btn");
+  if (!button) return;
+
+  const id = Number(button.dataset.propertyId);
+  const index = state.properties.findIndex(property => Number(property.id) === id);
+
+  if (index === -1) {
+    toast("تعذر العثور على العقار");
+    return;
+  }
+
+  const propertyName = state.properties[index].name;
+  const confirmed = window.confirm(`هل تريد حذف العقار: ${propertyName}؟`);
+  if (!confirmed) return;
+
+  state.properties.splice(index, 1);
+  save();
+  renderProperties(document.getElementById("propertySearch")?.value || "");
+  renderDashboard();
+  toast("تم حذف العقار بنجاح");
+});
+
 renderDashboard();
 renderProperties();
 renderUnits();
@@ -246,8 +270,4 @@ renderContracts();
 renderPayments();
 renderMaintenance();
 
-window.removeProperty=function(id){
-  if(!confirm("هل تريد حذف العقار؟")) return;
-  const i=state.properties.findIndex(p=>p.id===id);
-  if(i>-1){state.properties.splice(i,1);save();renderProperties();renderDashboard();toast("تم حذف العقار")}
-}
+
