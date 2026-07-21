@@ -1,4 +1,5 @@
 
+
 const seed = {
   properties: [
     {id:1,name:"عمارة النخيل",city:"جدة",district:"الزهراء",units:12,type:"عمارة",income:36000,occupied:11},
@@ -119,10 +120,23 @@ function renderProperties(filter=""){
 function renderUnits(){
   const q=document.getElementById("unitSearch").value.toLowerCase();
   const f=document.getElementById("unitStatusFilter").value;
-  const data=state.units.filter(u=>(`${u.name} ${u.property}`.toLowerCase().includes(q))&&(f==="all"||u.status===f));
+  const data=state.units
+    .map((unit,index)=>({...unit,_index:index}))
+    .filter(u=>(`${u.name} ${u.property}`.toLowerCase().includes(q))&&(f==="all"||u.status===f));
+
   document.getElementById("unitsBody").innerHTML=data.map(u=>`
-    <tr><td>${u.name}</td><td>${u.property}</td><td>${u.type}</td><td>${fmt(u.rent)} ر.س</td>
-    <td><span class="status ${statusClass(u.status)}">${u.status}</span></td></tr>`).join("");
+    <tr>
+      <td>${u.name}</td>
+      <td>${u.property}</td>
+      <td>${u.type}</td>
+      <td>${fmt(u.rent)} ر.س</td>
+      <td><span class="status ${statusClass(u.status)}">${u.status}</span></td>
+      <td>
+        <button type="button" class="action-btn danger delete-unit-btn" data-unit-index="${u._index}">
+          حذف
+        </button>
+      </td>
+    </tr>`).join("");
 }
 
 function renderTenants(){
@@ -260,6 +274,27 @@ document.addEventListener("click", function (event) {
   renderProperties(document.getElementById("propertySearch")?.value || "");
   renderDashboard();
   toast("تم حذف العقار بنجاح");
+});
+
+
+document.addEventListener("click", function (event) {
+  const button = event.target.closest(".delete-unit-btn");
+  if (!button) return;
+
+  const index = Number(button.dataset.unitIndex);
+  if (!Number.isInteger(index) || !state.units[index]) {
+    toast("تعذر العثور على الوحدة");
+    return;
+  }
+
+  const unitName = state.units[index].name;
+  const confirmed = window.confirm(`هل تريد حذف الوحدة: ${unitName}؟`);
+  if (!confirmed) return;
+
+  state.units.splice(index, 1);
+  save();
+  renderUnits();
+  toast("تم حذف الوحدة بنجاح");
 });
 
 renderDashboard();
