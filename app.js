@@ -1,5 +1,4 @@
 
-
 const seed = {
   properties: [
     {id:1,name:"عمارة النخيل",city:"جدة",district:"الزهراء",units:12,type:"عمارة",income:36000,occupied:11},
@@ -42,6 +41,13 @@ const seed = {
 };
 
 const state = JSON.parse(localStorage.getItem("amlakState") || "null") || seed;
+state.properties = Array.isArray(state.properties) ? state.properties : [];
+state.units = Array.isArray(state.units) ? state.units : [];
+state.tenants = Array.isArray(state.tenants) ? state.tenants : [];
+state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
+state.payments = Array.isArray(state.payments) ? state.payments : [];
+state.maintenance = Array.isArray(state.maintenance) ? state.maintenance : [];
+state.expenses = Array.isArray(state.expenses) ? state.expenses : [];
 const save = () => localStorage.setItem("amlakState", JSON.stringify(state));
 const fmt = n => new Intl.NumberFormat("ar-SA").format(n);
 
@@ -86,6 +92,11 @@ function renderDashboard(){
   document.getElementById("kpiUnits").textContent = fmt(totalUnits);
   document.getElementById("kpiOccupancy").textContent = occupancy+"%";
   document.getElementById("kpiIncome").textContent = fmt(income);
+  const lateAmount = state.payments
+    .filter(p=>p.status==="متأخر")
+    .reduce((sum,p)=>sum+Number(p.amount||0),0);
+  document.getElementById("kpiLate").textContent = fmt(lateAmount);
+  document.getElementById("lateTotal").innerHTML = `${fmt(lateAmount)} <small>ر.س</small>`;
 
   const expiring = state.contracts.filter(c=>c.status==="قريب الانتهاء");
   document.getElementById("expiringContracts").innerHTML = expiring.map((c,i)=>`
@@ -200,7 +211,7 @@ document.getElementById("propertyForm").addEventListener("submit",e=>{
     income:Number(f.get("income")),
     occupied:0
   });
-  save(); renderDashboard(); renderProperties(); closeModal(); e.target.reset();
+  save(); renderDashboard(); renderReports(); renderProperties(); closeModal(); e.target.reset();
   goTo("properties");
 });
 
@@ -223,7 +234,8 @@ function toast(msg){
 window.removeItem=function(type,index){
   if(!confirm("هل تريد حذف هذا السجل؟")) return;
   state[type].splice(index,1); save();
-  renderDashboard(); renderTenants(); renderContracts(); renderPayments(); renderMaintenance();
+  renderDashboard(); renderReports(); renderTenants(); renderContracts(); renderPayments(); renderMaintenance();
+renderReports();
   toast("تم الحذف");
 }
 
@@ -242,7 +254,7 @@ document.getElementById("contractForm").addEventListener("submit",e=>{
 document.getElementById("paymentForm").addEventListener("submit",e=>{
   e.preventDefault(); const f=new FormData(e.target);
   state.payments.unshift({tenant:f.get("tenant"),unit:f.get("unit"),amount:Number(f.get("amount")),status:f.get("status"),date:f.get("date")});
-  save(); renderPayments(); renderDashboard(); e.target.reset(); document.getElementById("paymentModal").classList.remove("open"); toast("تم تسجيل الدفعة");
+  save(); renderPayments(); renderDashboard(); renderReports(); e.target.reset(); document.getElementById("paymentModal").classList.remove("open"); toast("تم تسجيل الدفعة");
 });
 
 document.getElementById("maintenanceForm").addEventListener("submit",e=>{
@@ -273,6 +285,7 @@ document.addEventListener("click", function (event) {
   save();
   renderProperties(document.getElementById("propertySearch")?.value || "");
   renderDashboard();
+  renderReports();
   toast("تم حذف العقار بنجاح");
 });
 
@@ -297,6 +310,27 @@ document.addEventListener("click", function (event) {
   toast("تم حذف الوحدة بنجاح");
 });
 
+function renderReports(){
+  const monthlyIncome = state.properties.reduce((sum,p)=>sum+Number(p.income||0),0);
+  const annualIncome = monthlyIncome * 12;
+  const collected = state.payments
+    .filter(p=>p.status==="مدفوع")
+    .reduce((sum,p)=>sum+Number(p.amount||0),0);
+  const overdue = state.payments
+    .filter(p=>p.status==="متأخر")
+    .reduce((sum,p)=>sum+Number(p.amount||0),0);
+  const expenses = state.expenses.reduce((sum,e)=>sum+Number(e.amount||0),0);
+  const netIncome = collected - expenses;
+  const paidCount = state.payments.filter(p=>p.status==="مدفوع").length;
+
+  document.getElementById("reportAnnualIncome").textContent = `${fmt(annualIncome)} ر.س`;
+  document.getElementById("reportPropertyCount").textContent = `${fmt(state.properties.length)} عقار`;
+  document.getElementById("reportCollected").textContent = `${fmt(collected)} ر.س`;
+  document.getElementById("reportPaidCount").textContent = `${fmt(paidCount)} دفعة مدفوعة`;
+  document.getElementById("reportNetIncome").textContent = `${fmt(netIncome)} ر.س`;
+  document.getElementById("reportOverdue").textContent = `المتأخرات: ${fmt(overdue)} ر.س`;
+}
+
 renderDashboard();
 renderProperties();
 renderUnits();
@@ -304,5 +338,3 @@ renderTenants();
 renderContracts();
 renderPayments();
 renderMaintenance();
-
-
