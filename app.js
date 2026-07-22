@@ -1,322 +1,528 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "amlakState";
-  const SCHEMA_VERSION = 2;
-  const COLLECTIONS = ["properties", "units", "tenants", "contracts", "payments", "maintenance"];
-  const emptyState = () => ({
-    version: SCHEMA_VERSION,
-    properties: [], units: [], tenants: [], contracts: [], payments: [], maintenance: [],
-    settings: {companyName:"", taxNumber:"", contactNumber:"", notifyContracts:true, notifyPayments:true, notifyMaintenance:true}
+  const emptySeed = {
+    properties: [],
+    units: [],
+    tenants: [],
+    contracts: [],
+    payments: [],
+    maintenance: [],
+    expenses: []
+  };
+
+  function loadState() {
+    try {
+      const stored = JSON.parse(localStorage.getItem("amlakState") || "null");
+      const source = stored && typeof stored === "object" ? stored : emptySeed;
+      return {
+        properties: Array.isArray(source.properties) ? source.properties : [],
+        units: Array.isArray(source.units) ? source.units : [],
+        tenants: Array.isArray(source.tenants) ? source.tenants : [],
+        contracts: Array.isArray(source.contracts) ? source.contracts : [],
+        payments: Array.isArray(source.payments) ? source.payments : [],
+        maintenance: Array.isArray(source.maintenance) ? source.maintenance : [],
+        expenses: Array.isArray(source.expenses) ? source.expenses : []
+      };
+    } catch (error) {
+      console.error("تعذر قراءة البيانات المحفوظة:", error);
+      return structuredClone(emptySeed);
+    }
+  }
+
+  const state = loadState();
+
+  // Add stable IDs to old records without deleting any saved data.
+  const ensureIds = (items, prefix) => items.forEach((item, index) => {
+    if (!item.id) item.id = `${prefix}-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
   });
+  ensureIds(state.properties, "property");
+  ensureIds(state.units, "unit");
+  ensureIds(state.tenants, "tenant");
+  ensureIds(state.contracts, "contract");
+  ensureIds(state.payments, "payment");
+  ensureIds(state.maintenance, "maintenance");
 
   const $ = id => document.getElementById(id);
   const fmt = value => new Intl.NumberFormat("ar-SA").format(Number(value || 0));
-  const uid = prefix => `${prefix}-${Date.now()}-${crypto.randomUUID?.() || Math.random().toString(16).slice(2)}`;
-  const esc = value => String(value ?? "").replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);
-  const text = value => String(value ?? "").trim();
-  const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
-  let state = loadState();
-  let activePage = "dashboard";
-  let toastTimer;
-
-  function loadState() {
-    const clean = emptyState();
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return clean;
-      const source = JSON.parse(raw);
-      if (!source || typeof source !== "object") return clean;
-      COLLECTIONS.forEach(name => clean[name] = Array.isArray(source[name]) ? source[name].filter(item => item && typeof item === "object") : []);
-      clean.settings = {...clean.settings, ...(source.settings && typeof source.settings === "object" ? source.settings : {})};
-      migrate(clean);
-      return clean;
-    } catch (error) {
-      console.warn("تم تجاهل بيانات محلية تالفة.", error);
-      return clean;
-    }
-  }
-
-  function migrate(data) {
-    COLLECTIONS.forEach(name => data[name].forEach(item => { if (!item.id) item.id = uid(name.slice(0, -1)); }));
-    data.units.forEach(unit => {
-      if (!unit.propertyId && unit.property) unit.propertyId = data.properties.find(item => item.name === unit.property)?.id || "";
-      delete unit.property;
-    });
-    data.tenants.forEach(tenant => {
-      if (!tenant.unitId && tenant.unit) tenant.unitId = data.units.find(item => item.name === tenant.unit || `${item.name} - ${propertyNameFrom(data, item)}` === tenant.unit)?.id || "";
-      delete tenant.unit;
-    });
-    data.contracts.forEach(contract => {
-      if (!contract.tenantId && contract.tenant) contract.tenantId = data.tenants.find(item => item.name === contract.tenant)?.id || "";
-      if (!contract.unitId && contract.unit) contract.unitId = data.units.find(item => item.name === contract.unit)?.id || "";
-      delete contract.tenant; delete contract.unit;
-    });
-    data.payments.forEach(payment => {
-      if (!payment.contractId) {
-        const tenantId = data.tenants.find(item => item.name === payment.tenant)?.id;
-        payment.contractId = data.contracts.find(item => item.tenantId === tenantId)?.id || "";
-      }
-      delete payment.tenant; delete payment.unit;
-    });
-    data.maintenance.forEach(item => {
-      if (!item.unitId && item.unit) item.unitId = data.units.find(unit => unit.name === item.unit)?.id || "";
-      delete item.unit;
-    });
-    removeOrphans(data);
-    data.version = SCHEMA_VERSION;
-  }
-
-  function removeOrphans(data) {
-    const propertyIds = new Set(data.properties.map(item => item.id));
-    data.units = data.units.filter(item => propertyIds.has(item.propertyId));
-    const unitIds = new Set(data.units.map(item => item.id));
-    data.tenants = data.tenants.filter(item => unitIds.has(item.unitId));
-    const tenantById = new Map(data.tenants.map(item => [item.id, item]));
-    data.contracts = data.contracts.filter(item =>
-      unitIds.has(item.unitId) &&
-      tenantById.has(item.tenantId) &&
-      tenantById.get(item.tenantId).unitId === item.unitId
-    );
-    const contractIds = new Set(data.contracts.map(item => item.id));
-    data.payments = data.payments.filter(item => contractIds.has(item.contractId));
-    data.maintenance = data.maintenance.filter(item => unitIds.has(item.unitId));
-  }
-
-  function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); return true; }
-    catch (error) { console.error("تعذر حفظ البيانات:", error); toast("تعذر الحفظ؛ مساحة المتصفح ممتلئة", true); return false; }
-  }
-
-  function propertyNameFrom(data, unit) { return data.properties.find(item => item.id === unit.propertyId)?.name || "عقار غير موجود"; }
-  const propertyById = id => state.properties.find(item => item.id === id);
-  const unitById = id => state.units.find(item => item.id === id);
-  const tenantById = id => state.tenants.find(item => item.id === id);
-  const contractById = id => state.contracts.find(item => item.id === id);
-  const propertyName = unit => propertyById(unit?.propertyId)?.name || "عقار غير موجود";
-  const unitLabel = id => { const unit = unitById(id); return unit ? `${unit.name} - ${propertyName(unit)}` : "وحدة غير موجودة"; };
-  const tenantName = id => tenantById(id)?.name || "مستأجر غير موجود";
-  const contractLabel = id => { const contract = contractById(id); return contract ? `${contract.displayId || contract.id} — ${tenantName(contract.tenantId)} — ${unitLabel(contract.unitId)}` : "عقد غير موجود"; };
-  const statusClass = status => ["مدفوع","مشغولة","ساري","مكتمل"].includes(status) ? "paid" : ["متأخر","قريب الانتهاء","عالية","منتهي"].includes(status) ? "late" : ["شاغرة","جديد"].includes(status) ? "vacant" : "service";
-
-  function toast(message, error = false) {
-    let node = document.querySelector(".toast");
-    if (!node) { node = document.createElement("div"); node.className = "toast"; node.setAttribute("role", "status"); document.body.appendChild(node); }
-    clearTimeout(toastTimer); node.textContent = message; node.classList.toggle("error", error); node.classList.add("show");
-    toastTimer = setTimeout(() => node.classList.remove("show"), 2200);
-  }
+  const save = () => localStorage.setItem("amlakState", JSON.stringify(state));
 
   const pageMeta = {
-    dashboard:["لوحة التحكم","ملخص شامل لأداء أملاكك"], properties:["العقارات","إدارة جميع العقارات"],
-    units:["الوحدات","متابعة حالة الوحدات وإيجاراتها"], tenants:["المستأجرون","بيانات المستأجرين ووحداتهم"],
-    contracts:["العقود","إدارة العقود وتواريخها"], payments:["الدفعات","متابعة الإيرادات والمتأخرات"],
-    maintenance:["الصيانة","طلبات الصيانة ومتابعتها"], reports:["التقارير","ملخصات مالية وتشغيلية"], settings:["الإعدادات","تخصيص النظام والتنبيهات"]
+    dashboard:["لوحة التحكم","ملخص شامل لأداء أملاكك"],
+    properties:["العقارات","إدارة جميع العقارات والمحافظ"],
+    units:["الوحدات","متابعة حالة كل وحدة وإيجارها"],
+    tenants:["المستأجرون","بيانات المستأجرين وحالة السداد"],
+    contracts:["العقود","إدارة العقود وتجديدها"],
+    payments:["الدفعات","متابعة الإيرادات والمتأخرات"],
+    maintenance:["الصيانة","طلبات الصيانة ومتابعتها"],
+    reports:["التقارير","ملخصات مالية وتشغيلية"],
+    settings:["الإعدادات","تخصيص النظام والتنبيهات"]
   };
 
+  function toast(message) {
+    let element = document.querySelector(".toast");
+    if (!element) {
+      element = document.createElement("div");
+      element.className = "toast";
+      document.body.appendChild(element);
+    }
+    element.textContent = message;
+    element.classList.add("show");
+    setTimeout(() => element.classList.remove("show"), 1800);
+  }
+
   function goTo(page) {
-    if (!pageMeta[page]) return;
-    activePage = page;
-    document.querySelectorAll(".page").forEach(node => node.classList.toggle("active", node.id === `${page}Page`));
-    document.querySelectorAll("[data-page]").forEach(node => node.classList.toggle("active", node.dataset.page === page));
-    $("pageTitle").textContent = pageMeta[page][0]; $("pageSubtitle").textContent = pageMeta[page][1];
-    $("moreMenu").hidden = true; renderPage(page); window.scrollTo({top:0, behavior:"smooth"});
+    document.querySelectorAll(".page").forEach(element => element.classList.remove("active"));
+    const target = $(`${page}Page`);
+    if (target) target.classList.add("active");
+
+    document.querySelectorAll("[data-page]").forEach(button => {
+      button.classList.toggle("active", button.dataset.page === page);
+    });
+
+    if (pageMeta[page]) {
+      $("pageTitle").textContent = pageMeta[page][0];
+      $("pageSubtitle").textContent = pageMeta[page][1];
+    }
+    window.scrollTo({top:0, behavior:"smooth"});
+  }
+
+  function statusClass(status) {
+    if (["مدفوع","مشغولة","ساري","مكتمل"].includes(status)) return "paid";
+    if (["متأخر","قريب الانتهاء","عالية"].includes(status)) return "late";
+    if (["شاغرة","جديد"].includes(status)) return "vacant";
+    return "service";
   }
 
   function monthlyExpectedIncome() {
-    return state.properties.reduce((total, property) => {
-      const units = state.units.filter(unit => unit.propertyId === property.id);
-      return total + (units.length ? units.reduce((sum, unit) => sum + Number(unit.rent || 0), 0) : Number(property.income || 0));
-    }, 0);
+    // Prefer actual unit rents when units exist; otherwise use the property estimate.
+    if (state.units.length) return state.units.reduce((sum, unit) => sum + Number(unit.rent || 0), 0);
+    return state.properties.reduce((sum, property) => sum + Number(property.income || 0), 0);
   }
 
-  function renderDashboard() {
-    const occupied = state.units.filter(item => item.status === "مشغولة").length;
-    const vacant = state.units.filter(item => item.status === "شاغرة").length;
-    const service = state.units.filter(item => item.status === "تحت الصيانة").length;
-    const latePayments = state.payments.filter(item => item.status === "متأخر");
-    const lateAmount = latePayments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const totalUnits = state.units.length;
-    $("kpiProperties").textContent = fmt(state.properties.length); $("kpiUnits").textContent = fmt(totalUnits);
-    $("kpiOccupancy").textContent = `${totalUnits ? Math.round(occupied / totalUnits * 100) : 0}%`;
-    $("kpiIncome").textContent = fmt(monthlyExpectedIncome()); $("kpiLate").textContent = fmt(lateAmount);
-    $("lateTotal").innerHTML = `${fmt(lateAmount)} <small>ر.س</small>`; $("latePaymentsCount").textContent = fmt(latePayments.length);
-    $("occupiedCount").textContent = fmt(occupied); $("vacantCount").textContent = fmt(vacant); $("serviceCount").textContent = fmt(service);
-    const occupiedPct = totalUnits ? occupied / totalUnits * 100 : 0; const vacantPct = totalUnits ? vacant / totalUnits * 100 : 0;
-    $("donutChart").style.background = totalUnits ? `conic-gradient(var(--blue) 0 ${occupiedPct}%,var(--green) ${occupiedPct}% ${occupiedPct + vacantPct}%,var(--orange) ${occupiedPct + vacantPct}% 100%)` : "#e9eef5";
-    renderNotifications(); renderIncomeChart();
-    const expiring = state.contracts.filter(item => item.status === "قريب الانتهاء").slice(0, 5);
-    $("expiringContracts").innerHTML = expiring.length ? expiring.map(item => `<div class="compact-item"><div class="day-box">${esc(item.end?.slice(-2) || "—")}</div><div><strong>${esc(unitLabel(item.unitId))}</strong><small>${esc(tenantName(item.tenantId))} — ${esc(item.end)}</small></div></div>`).join("") : '<p class="empty-state">لا توجد عقود قريبة من الانتهاء.</p>';
-    const recent = [...state.payments].sort((a,b) => String(b.date).localeCompare(String(a.date))).slice(0,4);
-    $("recentPaymentsBody").innerHTML = recent.length ? recent.map(payment => { const contract = contractById(payment.contractId); return `<tr><td>${esc(tenantName(contract?.tenantId))}</td><td>${esc(unitLabel(contract?.unitId))}</td><td>${fmt(payment.amount)} ر.س</td><td><span class="status ${statusClass(payment.status)}">${esc(payment.status)}</span></td><td>${esc(payment.date)}</td></tr>`; }).join("") : '<tr><td colspan="5" class="empty-state">لا توجد دفعات مسجلة.</td></tr>';
+  function unitStats() {
+    return {
+      occupied: state.units.filter(unit => unit.status === "مشغولة").length,
+      vacant: state.units.filter(unit => unit.status === "شاغرة").length,
+      service: state.units.filter(unit => unit.status === "تحت الصيانة").length
+    };
   }
 
-  function renderNotifications() {
-    const total = (state.settings.notifyPayments ? state.payments.filter(item => item.status === "متأخر").length : 0) + (state.settings.notifyContracts ? state.contracts.filter(item => item.status === "قريب الانتهاء").length : 0) + (state.settings.notifyMaintenance ? state.maintenance.filter(item => item.status !== "مكتمل").length : 0);
-    $("notificationCount").textContent = fmt(total); $("notificationCount").hidden = total === 0;
-  }
-
-  function renderIncomeChart() {
-    const year = Number($("yearSelect").value || new Date().getFullYear());
-    const today = new Date(); const months = Array.from({length:6}, (_, offset) => new Date(today.getFullYear(), today.getMonth() - 5 + offset, 1));
-    const shown = months.filter(date => date.getFullYear() === year);
-    const values = shown.map(month => state.payments.filter(item => item.status === "مدفوع" && validDate(item.date) && new Date(`${item.date}T00:00:00`).getFullYear() === year && new Date(`${item.date}T00:00:00`).getMonth() === month.getMonth()).reduce((sum,item) => sum + Number(item.amount || 0), 0));
-    const max = Math.max(...values, 1); const width = 510 / Math.max(shown.length - 1, 1); const points = values.map((value,index) => `${55 + width * index},${210 - value / max * 180}`);
-    $("incomeChartLine").setAttribute("points", points.join(" ")); $("incomeChartDots").innerHTML = points.map(point => { const [cx,cy] = point.split(","); return `<circle cx="${cx}" cy="${cy}" r="5"/>`; }).join("");
-    $("incomeChartLabels").style.gridTemplateColumns = `repeat(${Math.max(shown.length,1)},1fr)`; $("incomeChartLabels").innerHTML = shown.map(date => `<span>${new Intl.DateTimeFormat("ar-SA",{month:"short"}).format(date)}</span>`).join("");
-  }
-
-  function renderProperties() {
-    const query = text($("propertySearch").value).toLowerCase(); const items = state.properties.filter(item => `${item.name} ${item.city} ${item.district}`.toLowerCase().includes(query));
-    $("propertiesGrid").innerHTML = items.length ? items.map(item => { const units = state.units.filter(unit => unit.propertyId === item.id); return `<article class="card property-card"><div class="property-hero"><div class="property-icon">▦</div></div><div class="property-body"><div class="property-title"><div><h3>${esc(item.name)}</h3><span>${esc(item.city)} - ${esc(item.district)}</span></div><span>${esc(item.type)}</span></div><div class="property-meta"><div><strong>${fmt(units.length)}</strong><small>وحدة</small></div><div><strong>${fmt(units.filter(unit => unit.status === "مشغولة").length)}</strong><small>مشغولة</small></div><div><strong>${fmt(item.income)}</strong><small>ر.س تقديريًا</small></div></div><div class="row-actions"><button class="action-btn" data-edit="property" data-id="${item.id}">تعديل</button><button class="action-btn danger" data-delete="property" data-id="${item.id}">حذف</button></div></div></article>`; }).join("") : '<div class="card empty-state">لا توجد عقارات.</div>';
-  }
-
-  function renderUnits() {
-    const query = text($("unitSearch").value).toLowerCase(); const filter = $("unitStatusFilter").value;
-    const items = state.units.filter(item => `${item.name} ${propertyName(item)}`.toLowerCase().includes(query) && (filter === "all" || item.status === filter));
-    $("unitsBody").innerHTML = items.length ? items.map(item => `<tr><td>${esc(item.name)}</td><td>${esc(propertyName(item))}</td><td>${esc(item.type)}</td><td>${fmt(item.rent)} ر.س</td><td><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></td><td><div class="row-actions"><button class="action-btn" data-edit="unit" data-id="${item.id}">تعديل</button><button class="action-btn danger" data-delete="unit" data-id="${item.id}">حذف</button></div></td></tr>`).join("") : '<tr><td colspan="6" class="empty-state">لا توجد وحدات.</td></tr>';
-  }
-
-  function renderTenants() {
-    const query = text($("tenantSearch").value).toLowerCase(); const items = state.tenants.filter(item => `${item.name} ${item.phone} ${unitLabel(item.unitId)}`.toLowerCase().includes(query));
-    $("tenantsBody").innerHTML = items.length ? items.map(item => `<tr><td>${esc(item.name)}</td><td>${esc(item.phone)}</td><td>${esc(unitLabel(item.unitId))}</td><td><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></td><td><div class="row-actions"><button class="action-btn" data-edit="tenant" data-id="${item.id}">تعديل</button><button class="action-btn danger" data-delete="tenant" data-id="${item.id}">حذف</button></div></td></tr>`).join("") : '<tr><td colspan="5" class="empty-state">لا يوجد مستأجرون.</td></tr>';
-  }
-
-  function renderContracts() {
-    const query = text($("contractSearch").value).toLowerCase(); const items = state.contracts.filter(item => `${item.displayId} ${tenantName(item.tenantId)} ${unitLabel(item.unitId)}`.toLowerCase().includes(query));
-    $("contractsBody").innerHTML = items.length ? items.map(item => `<tr><td>${esc(item.displayId || item.id)}</td><td>${esc(tenantName(item.tenantId))}</td><td>${esc(unitLabel(item.unitId))}</td><td>${esc(item.start)}</td><td>${esc(item.end)}</td><td><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></td><td><div class="row-actions"><button class="action-btn" data-edit="contract" data-id="${item.id}">تعديل</button><button class="action-btn danger" data-delete="contract" data-id="${item.id}">حذف</button></div></td></tr>`).join("") : '<tr><td colspan="7" class="empty-state">لا توجد عقود.</td></tr>';
-  }
-
-  function renderPayments() {
-    const query = text($("paymentSearch").value).toLowerCase(); const items = state.payments.filter(item => { const contract = contractById(item.contractId); return `${tenantName(contract?.tenantId)} ${unitLabel(contract?.unitId)} ${item.status}`.toLowerCase().includes(query); });
-    $("paymentsBody").innerHTML = items.length ? items.map(item => { const contract = contractById(item.contractId); return `<tr><td>${esc(tenantName(contract?.tenantId))}</td><td>${esc(unitLabel(contract?.unitId))}</td><td>${fmt(item.amount)} ر.س</td><td><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></td><td>${esc(item.date)}</td><td><div class="row-actions"><button class="action-btn" data-edit="payment" data-id="${item.id}">تعديل</button><button class="action-btn danger" data-delete="payment" data-id="${item.id}">حذف</button></div></td></tr>`; }).join("") : '<tr><td colspan="6" class="empty-state">لا توجد دفعات.</td></tr>';
-  }
-
-  function renderMaintenance() {
-    $("maintenanceGrid").innerHTML = state.maintenance.length ? state.maintenance.map(item => `<article class="card maintenance-item"><div class="ticket-head"><h3>${esc(item.title)}</h3><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></div><p>${esc(unitLabel(item.unitId))}</p><div class="ticket-foot"><span>الأولوية: ${esc(item.priority)}</span><span>${esc(item.date)}</span></div><div class="row-actions"><button class="action-btn" data-edit="maintenance" data-id="${item.id}">تعديل</button><button class="action-btn danger" data-delete="maintenance" data-id="${item.id}">حذف</button></div></article>`).join("") : '<div class="card empty-state">لا توجد طلبات صيانة.</div>';
-  }
-
-  function renderReports() {
-    const collected = state.payments.filter(item => item.status === "مدفوع").reduce((sum,item) => sum + Number(item.amount || 0),0); const overdue = state.payments.filter(item => item.status === "متأخر").reduce((sum,item) => sum + Number(item.amount || 0),0);
-    $("reportAnnualIncome").textContent = `${fmt(monthlyExpectedIncome() * 12)} ر.س`; $("reportPropertyCount").textContent = `${fmt(state.properties.length)} عقار`;
-    $("reportCollected").textContent = `${fmt(collected)} ر.س`; $("reportPaidCount").textContent = `${fmt(state.payments.filter(item => item.status === "مدفوع").length)} دفعة مدفوعة`;
-    $("reportNetIncome").textContent = `${fmt(collected)} ر.س`; $("reportOverdue").textContent = `المتأخرات: ${fmt(overdue)} ر.س`;
-  }
-
-  function renderPage(page) { ({dashboard:renderDashboard,properties:renderProperties,units:renderUnits,tenants:renderTenants,contracts:renderContracts,payments:renderPayments,maintenance:renderMaintenance,reports:renderReports}[page] || (()=>{}))(); }
-  function renderAfterChange() { renderPage(activePage); if (activePage !== "dashboard") renderNotifications(); refreshOptions(); save(); }
-
-  function optionMarkup(items, label) { return items.length ? items.map(item => `<option value="${item.id}">${esc(label(item))}</option>`).join("") : '<option value="">لا توجد خيارات متاحة</option>'; }
-  function refreshOptions() {
-    $("unitPropertySelect").innerHTML = optionMarkup(state.properties, item => item.name);
-    ["tenantUnitSelect","contractUnitSelect","maintenanceUnitSelect"].forEach(id => $(id).innerHTML = optionMarkup(state.units, item => unitLabel(item.id)));
-    $("contractTenantSelect").innerHTML = optionMarkup(state.tenants, item => item.name);
-    $("paymentContractSelect").innerHTML = optionMarkup(state.contracts, item => contractLabel(item.id));
-  }
-
-  const modalFor = {property:"modalBackdrop",unit:"unitModal",tenant:"tenantModal",contract:"contractModal",payment:"paymentModal",maintenance:"maintenanceModal"};
-  const formFor = {property:"propertyForm",unit:"unitForm",tenant:"tenantForm",contract:"contractForm",payment:"paymentForm",maintenance:"maintenanceForm"};
-  const collectionFor = {property:"properties",unit:"units",tenant:"tenants",contract:"contracts",payment:"payments",maintenance:"maintenance"};
-  const titleFor = {property:["إضافة عقار جديد","تعديل العقار"],unit:["إضافة وحدة","تعديل الوحدة"],tenant:["إضافة مستأجر","تعديل المستأجر"],contract:["إنشاء عقد","تعديل العقد"],payment:["تسجيل دفعة","تعديل الدفعة"],maintenance:["طلب صيانة","تعديل طلب الصيانة"]};
-
-  function openEditor(type, id = "") {
-    refreshOptions(); const form = $(formFor[type]); form.reset(); form.elements.id.value = id; const item = state[collectionFor[type]].find(record => record.id === id);
-    $(modalFor[type]).querySelector("h2").textContent = titleFor[type][item ? 1 : 0];
-    if (item) Object.entries(item).forEach(([key,value]) => { if (form.elements[key]) form.elements[key].value = value; });
-    else if (form.elements.date) form.elements.date.value = new Date().toISOString().slice(0,10);
-    $(modalFor[type]).classList.add("open"); setTimeout(() => form.querySelector("input:not([type=hidden]),select")?.focus(),0);
-  }
-  function closeModal(node) { node.classList.remove("open"); }
-
-  function validateRelations(type, record) {
-    if (type === "unit" && !propertyById(record.propertyId)) return "اختر عقارًا صحيحًا";
-    if (type === "tenant" && !unitById(record.unitId)) return "اختر وحدة صحيحة";
-    if (type === "tenant") {
-      const existing = tenantById(record.id);
-      if (existing && existing.unitId !== record.unitId && state.contracts.some(item => item.tenantId === record.id)) return "لا يمكن تغيير وحدة مستأجر لديه عقد؛ عدّل العقد أو احذفه أولًا";
-    }
-    if (type === "contract" && (!tenantById(record.tenantId) || !unitById(record.unitId))) return "اختر مستأجرًا ووحدة صحيحين";
-    if (type === "contract" && tenantById(record.tenantId)?.unitId !== record.unitId) return "الوحدة المختارة لا تتطابق مع وحدة المستأجر";
-    if (type === "contract" && record.end < record.start) return "تاريخ نهاية العقد يجب أن يكون بعد البداية";
-    if (type === "payment" && !contractById(record.contractId)) return "اختر عقدًا صحيحًا";
-    if (type === "maintenance" && !unitById(record.unitId)) return "اختر وحدة صحيحة";
-    return "";
-  }
-
-  function upsert(type, record) {
-    const items = state[collectionFor[type]]; const existing = items.find(item => item.id === record.id);
-    if (existing) Object.assign(existing, record); else items.unshift(record);
-    renderAfterChange(); closeModal($(modalFor[type])); toast(existing ? "تم حفظ التعديل" : "تمت الإضافة");
-  }
-
-  function deleteRecord(type, id) {
-    const counts = {units:0,tenants:0,contracts:0,payments:0,maintenance:0};
-    if (type === "property") {
-      const unitIds = state.units.filter(item => item.propertyId === id).map(item => item.id); counts.units = unitIds.length;
-      const tenantIds = state.tenants.filter(item => unitIds.includes(item.unitId)).map(item => item.id); counts.tenants = tenantIds.length;
-      const contractIds = state.contracts.filter(item => unitIds.includes(item.unitId) || tenantIds.includes(item.tenantId)).map(item => item.id); counts.contracts = contractIds.length;
-      counts.payments = state.payments.filter(item => contractIds.includes(item.contractId)).length; counts.maintenance = state.maintenance.filter(item => unitIds.includes(item.unitId)).length;
-      if (!confirm(`سيتم حذف العقار وكل البيانات المرتبطة: ${counts.units} وحدة، ${counts.tenants} مستأجر، ${counts.contracts} عقد، ${counts.payments} دفعة، ${counts.maintenance} طلب صيانة. هل تريد المتابعة؟`)) return;
-      state.properties = state.properties.filter(item => item.id !== id); state.units = state.units.filter(item => !unitIds.includes(item.id)); state.tenants = state.tenants.filter(item => !tenantIds.includes(item.id)); state.contracts = state.contracts.filter(item => !contractIds.includes(item.id)); state.payments = state.payments.filter(item => !contractIds.includes(item.contractId)); state.maintenance = state.maintenance.filter(item => !unitIds.includes(item.unitId));
-    } else if (type === "unit") {
-      const tenantIds = state.tenants.filter(item => item.unitId === id).map(item => item.id); const contractIds = state.contracts.filter(item => item.unitId === id || tenantIds.includes(item.tenantId)).map(item => item.id);
-      if (!confirm(`سيتم حذف الوحدة و${tenantIds.length} مستأجر و${contractIds.length} عقد وكل الدفعات والصيانة المرتبطة. متابعة؟`)) return;
-      state.units = state.units.filter(item => item.id !== id); state.tenants = state.tenants.filter(item => !tenantIds.includes(item.id)); state.contracts = state.contracts.filter(item => !contractIds.includes(item.id)); state.payments = state.payments.filter(item => !contractIds.includes(item.contractId)); state.maintenance = state.maintenance.filter(item => item.unitId !== id);
-    } else if (type === "tenant") {
-      const contractIds = state.contracts.filter(item => item.tenantId === id).map(item => item.id); if (!confirm(`سيتم حذف المستأجر و${contractIds.length} عقد والدفعات المرتبطة. متابعة؟`)) return;
-      state.tenants = state.tenants.filter(item => item.id !== id); state.contracts = state.contracts.filter(item => !contractIds.includes(item.id)); state.payments = state.payments.filter(item => !contractIds.includes(item.contractId));
-    } else if (type === "contract") {
-      const paymentCount = state.payments.filter(item => item.contractId === id).length; if (!confirm(`سيتم حذف العقد و${paymentCount} دفعة مرتبطة. متابعة؟`)) return;
-      state.contracts = state.contracts.filter(item => item.id !== id); state.payments = state.payments.filter(item => item.contractId !== id);
-    } else { if (!confirm("هل تريد حذف هذا السجل؟")) return; state[collectionFor[type]] = state[collectionFor[type]].filter(item => item.id !== id); }
-    renderAfterChange(); toast("تم الحذف مع الحفاظ على سلامة العلاقات");
-  }
-
-  function bindForm(type, build) {
-    $(formFor[type]).addEventListener("submit", event => {
-      event.preventDefault(); const data = new FormData(event.currentTarget); const id = data.get("id") || uid(type); const record = build(data,id); const problem = validateRelations(type,record);
-      if (problem) { toast(problem,true); return; } upsert(type,record);
+  function refreshPropertyUnitCounts() {
+    state.properties.forEach(property => {
+      const linked = state.units.filter(unit => unit.propertyId === property.id || unit.property === property.name);
+      property.units = linked.length;
+      property.occupied = linked.filter(unit => unit.status === "مشغولة").length;
     });
   }
 
-  bindForm("property", (f,id) => ({id,name:text(f.get("name")),city:text(f.get("city")),district:text(f.get("district")),type:f.get("type"),income:Number(f.get("income") || 0)}));
-  bindForm("unit", (f,id) => ({id,name:text(f.get("name")),propertyId:f.get("property"),type:f.get("type"),rent:Number(f.get("rent") || 0),status:f.get("status")}));
-  bindForm("tenant", (f,id) => ({id,name:text(f.get("name")),phone:text(f.get("phone")),unitId:f.get("unitId"),status:f.get("status")}));
-  bindForm("contract", (f,id) => ({id,displayId:state.contracts.find(item=>item.id===id)?.displayId || `C-${String(Date.now()).slice(-6)}`,tenantId:f.get("tenantId"),unitId:f.get("unitId"),start:f.get("start"),end:f.get("end"),status:f.get("status")}));
-  bindForm("payment", (f,id) => ({id,contractId:f.get("contractId"),amount:Number(f.get("amount") || 0),date:f.get("date"),status:f.get("status")}));
-  bindForm("maintenance", (f,id) => ({id,title:text(f.get("title")),unitId:f.get("unitId"),priority:f.get("priority"),status:f.get("status"),date:f.get("date")}));
+  function renderDashboard() {
+    refreshPropertyUnitCounts();
+    const stats = unitStats();
+    const totalUnits = state.units.length;
+    const occupancy = totalUnits ? Math.round((stats.occupied / totalUnits) * 100) : 0;
+    const income = monthlyExpectedIncome();
+    const lateAmount = state.payments
+      .filter(payment => payment.status === "متأخر")
+      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
-  document.addEventListener("click", event => {
-    const pageButton = event.target.closest("[data-page]"); if (pageButton) { goTo(pageButton.dataset.page); return; }
-    const goto = event.target.closest("[data-goto]"); if (goto) { goTo(goto.dataset.goto); return; }
-    const edit = event.target.closest("[data-edit][data-id]"); if (edit) { openEditor(edit.dataset.edit,edit.dataset.id); return; }
-    const del = event.target.closest("[data-delete][data-id]"); if (del) { deleteRecord(del.dataset.delete,del.dataset.id); return; }
-  });
-  document.querySelectorAll(".modal-backdrop").forEach(node => node.addEventListener("click", event => { if (event.target === node || event.target.closest(".modal-close") || event.target.id === "closeModal") closeModal(node); }));
-  document.addEventListener("keydown", event => { if (event.key === "Escape") document.querySelectorAll(".modal-backdrop.open").forEach(closeModal); });
+    $("kpiProperties").textContent = fmt(state.properties.length);
+    $("kpiUnits").textContent = fmt(totalUnits);
+    $("kpiOccupancy").textContent = `${occupancy}%`;
+    $("kpiIncome").textContent = fmt(income);
+    $("kpiLate").textContent = fmt(lateAmount);
+    $("lateTotal").innerHTML = `${fmt(lateAmount)} <small>ر.س</small>`;
 
-  [["quickAddBtn","property"],["addPropertyBtn","property"],["addUnitBtn","unit"],["addTenantBtn","tenant"],["addContractBtn","contract"],["addPaymentBtn","payment"],["addMaintenanceBtn","maintenance"]].forEach(([id,type]) => $(id).addEventListener("click", () => {
-    const required = {unit:state.properties,tenant:state.units,contract:state.tenants,payment:state.contracts,maintenance:state.units}[type];
-    if (required && !required.length) { toast("أضف البيانات الأساسية المطلوبة أولًا",true); return; } openEditor(type);
-  }));
+    $("occupiedCount").textContent = stats.occupied;
+    $("vacantCount").textContent = stats.vacant;
+    $("serviceCount").textContent = stats.service;
 
-  const renderDebounced = (() => { let timer; return fn => { clearTimeout(timer); timer=setTimeout(fn,120); }; })();
-  $("propertySearch").addEventListener("input", () => renderDebounced(renderProperties)); $("unitSearch").addEventListener("input", () => renderDebounced(renderUnits)); $("tenantSearch").addEventListener("input", () => renderDebounced(renderTenants)); $("contractSearch").addEventListener("input", () => renderDebounced(renderContracts)); $("paymentSearch").addEventListener("input", () => renderDebounced(renderPayments));
-  $("unitStatusFilter").addEventListener("change", renderUnits); $("yearSelect").addEventListener("change", renderIncomeChart);
-  $("contractTenantSelect").addEventListener("change", event => {
-    const unitId = tenantById(event.target.value)?.unitId;
-    if (unitId && unitById(unitId)) $("contractUnitSelect").value = unitId;
-  });
-  $("notificationsBtn").addEventListener("click", () => toast($("notificationCount").hidden ? "لا توجد تنبيهات حالية" : `لديك ${$("notificationCount").textContent} تنبيه`));
-  $("mobileMoreBtn").addEventListener("click", () => $("moreMenu").hidden = !$("moreMenu").hidden);
+    const donut = $("donutChart");
+    if (totalUnits === 0) {
+      donut.style.background = "conic-gradient(#e9eef5 0 100%)";
+    } else {
+      const occupiedPct = (stats.occupied / totalUnits) * 100;
+      const vacantPct = (stats.vacant / totalUnits) * 100;
+      donut.style.background =
+        `conic-gradient(var(--blue) 0 ${occupiedPct}%,
+        var(--green) ${occupiedPct}% ${occupiedPct + vacantPct}%,
+        var(--orange) ${occupiedPct + vacantPct}% 100%)`;
+    }
 
-  $("settingsForm").addEventListener("submit", event => { event.preventDefault(); const f=new FormData(event.currentTarget); Object.assign(state.settings,{companyName:text(f.get("companyName")),taxNumber:text(f.get("taxNumber")),contactNumber:text(f.get("contactNumber"))}); save(); toast("تم حفظ الإعدادات"); });
-  [["notifyContracts","notifyContracts"],["notifyPayments","notifyPayments"],["notifyMaintenance","notifyMaintenance"]].forEach(([id,key]) => $(id).addEventListener("change", event => { state.settings[key]=event.target.checked; save(); renderNotifications(); }));
+    const expiring = state.contracts.filter(contract => contract.status === "قريب الانتهاء");
+    $("expiringContracts").innerHTML = expiring.length
+      ? expiring.map((contract, index) => `
+          <div class="compact-item">
+            <div class="day-box">${index + 1}</div>
+            <div><strong>${contract.unit} - ${contract.tenant}</strong><small>ينتهي في ${contract.end}</small></div>
+          </div>`).join("")
+      : '<p class="empty-state">لا توجد عقود قريبة من الانتهاء.</p>';
 
-  function init() {
-    const currentYear = new Date().getFullYear(); $("yearSelect").innerHTML = [currentYear,currentYear-1].map(year => `<option>${year}</option>`).join("");
-    const form=$("settingsForm"); form.elements.companyName.value=state.settings.companyName; form.elements.taxNumber.value=state.settings.taxNumber; form.elements.contactNumber.value=state.settings.contactNumber;
-    $("notifyContracts").checked=state.settings.notifyContracts; $("notifyPayments").checked=state.settings.notifyPayments; $("notifyMaintenance").checked=state.settings.notifyMaintenance;
-    refreshOptions(); renderDashboard(); save();
+    $("recentPaymentsBody").innerHTML = state.payments.length
+      ? state.payments.slice(0,4).map(payment => `
+          <tr>
+            <td>${payment.tenant}</td><td>${payment.unit}</td>
+            <td>${fmt(payment.amount)} ر.س</td>
+            <td><span class="status ${statusClass(payment.status)}">${payment.status}</span></td>
+            <td>${payment.date}</td>
+          </tr>`).join("")
+      : '<tr><td colspan="5" class="empty-state">لا توجد دفعات مسجلة.</td></tr>';
   }
-  init();
+
+  function renderProperties(filter = "") {
+    refreshPropertyUnitCounts();
+    const query = filter.trim().toLowerCase();
+    const data = state.properties.filter(property =>
+      `${property.name} ${property.city} ${property.district}`.toLowerCase().includes(query)
+    );
+
+    $("propertiesGrid").innerHTML = data.length
+      ? data.map(property => `
+          <article class="card property-card">
+            <div class="property-hero"><div class="property-icon">▦</div></div>
+            <div class="property-body">
+              <div class="property-title">
+                <div><h3>${property.name}</h3><span>${property.city} - ${property.district}</span></div>
+                <span>${property.type}</span>
+              </div>
+              <div class="property-meta">
+                <div><strong>${property.units}</strong><small>وحدة</small></div>
+                <div><strong>${property.occupied}</strong><small>مشغولة</small></div>
+                <div><strong>${fmt(property.income)}</strong><small>ر.س تقديريًا</small></div>
+              </div>
+              <div class="row-actions" style="margin-top:12px">
+                <button type="button" class="action-btn danger" data-delete="property" data-id="${property.id}">حذف العقار</button>
+              </div>
+            </div>
+          </article>`).join("")
+      : '<div class="card empty-state">لا توجد عقارات. اضغط «إضافة عقار» للبدء.</div>';
+  }
+
+  function renderUnits() {
+    const query = $("unitSearch").value.toLowerCase();
+    const filter = $("unitStatusFilter").value;
+    const data = state.units.filter(unit =>
+      `${unit.name} ${unit.property}`.toLowerCase().includes(query) &&
+      (filter === "all" || unit.status === filter)
+    );
+
+    $("unitsBody").innerHTML = data.length
+      ? data.map(unit => `
+          <tr>
+            <td>${unit.name}</td><td>${unit.property}</td><td>${unit.type}</td>
+            <td>${fmt(unit.rent)} ر.س</td>
+            <td><span class="status ${statusClass(unit.status)}">${unit.status}</span></td>
+            <td><button type="button" class="action-btn danger" data-delete="unit" data-id="${unit.id}">حذف</button></td>
+          </tr>`).join("")
+      : '<tr><td colspan="6" class="empty-state">لا توجد وحدات.</td></tr>';
+  }
+
+  function renderTenants() {
+    const query = $("tenantSearch").value.toLowerCase();
+    const data = state.tenants.filter(tenant =>
+      `${tenant.name} ${tenant.phone} ${tenant.unit}`.toLowerCase().includes(query)
+    );
+
+    $("tenantsBody").innerHTML = data.length
+      ? data.map(tenant => `
+          <tr>
+            <td>${tenant.name}</td><td>${tenant.phone}</td><td>${tenant.unit}</td>
+            <td><span class="status ${statusClass(tenant.status)}">${tenant.status}</span></td>
+            <td><button type="button" class="action-btn danger" data-delete="tenant" data-id="${tenant.id}">حذف</button></td>
+          </tr>`).join("")
+      : '<tr><td colspan="5" class="empty-state">لا يوجد مستأجرون.</td></tr>';
+  }
+
+  function renderContracts() {
+    const query = $("contractSearch").value.toLowerCase();
+    const data = state.contracts.filter(contract =>
+      `${contract.id} ${contract.tenant} ${contract.unit}`.toLowerCase().includes(query)
+    );
+
+    $("contractsBody").innerHTML = data.length
+      ? data.map(contract => `
+          <tr>
+            <td>${contract.displayId || contract.id}</td><td>${contract.tenant}</td><td>${contract.unit}</td>
+            <td>${contract.start}</td><td>${contract.end}</td>
+            <td><span class="status ${statusClass(contract.status)}">${contract.status}</span></td>
+            <td><button type="button" class="action-btn danger" data-delete="contract" data-id="${contract.id}">حذف</button></td>
+          </tr>`).join("")
+      : '<tr><td colspan="7" class="empty-state">لا توجد عقود.</td></tr>';
+  }
+
+  function renderPayments() {
+    const query = $("paymentSearch").value.toLowerCase();
+    const data = state.payments.filter(payment =>
+      `${payment.tenant} ${payment.unit} ${payment.status}`.toLowerCase().includes(query)
+    );
+
+    $("paymentsBody").innerHTML = data.length
+      ? data.map(payment => `
+          <tr>
+            <td>${payment.tenant}</td><td>${payment.unit}</td><td>${fmt(payment.amount)} ر.س</td>
+            <td><span class="status ${statusClass(payment.status)}">${payment.status}</span></td>
+            <td>${payment.date}</td>
+            <td><button type="button" class="action-btn danger" data-delete="payment" data-id="${payment.id}">حذف</button></td>
+          </tr>`).join("")
+      : '<tr><td colspan="6" class="empty-state">لا توجد دفعات.</td></tr>';
+  }
+
+  function renderMaintenance() {
+    $("maintenanceGrid").innerHTML = state.maintenance.length
+      ? state.maintenance.map(item => `
+          <article class="card maintenance-item">
+            <div class="ticket-head"><h3>${item.title}</h3><span class="status ${statusClass(item.status)}">${item.status}</span></div>
+            <p>${item.unit}</p>
+            <div class="ticket-foot"><span>الأولوية: ${item.priority}</span><span>${item.date}</span></div>
+            <div class="row-actions" style="margin-top:12px">
+              <button type="button" class="action-btn danger" data-delete="maintenance" data-id="${item.id}">حذف</button>
+            </div>
+          </article>`).join("")
+      : '<div class="card empty-state">لا توجد طلبات صيانة.</div>';
+  }
+
+  function renderReports() {
+    const monthlyIncome = monthlyExpectedIncome();
+    const annualIncome = monthlyIncome * 12;
+    const collected = state.payments
+      .filter(payment => payment.status === "مدفوع")
+      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const overdue = state.payments
+      .filter(payment => payment.status === "متأخر")
+      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const expenses = state.expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+    const paidCount = state.payments.filter(payment => payment.status === "مدفوع").length;
+
+    $("reportAnnualIncome").textContent = `${fmt(annualIncome)} ر.س`;
+    $("reportPropertyCount").textContent = `${fmt(state.properties.length)} عقار`;
+    $("reportCollected").textContent = `${fmt(collected)} ر.س`;
+    $("reportPaidCount").textContent = `${fmt(paidCount)} دفعة مدفوعة`;
+    $("reportNetIncome").textContent = `${fmt(collected - expenses)} ر.س`;
+    $("reportOverdue").textContent = `المتأخرات: ${fmt(overdue)} ر.س`;
+  }
+
+  function renderAll() {
+    renderDashboard();
+    renderProperties($("propertySearch").value);
+    renderUnits();
+    renderTenants();
+    renderContracts();
+    renderPayments();
+    renderMaintenance();
+    renderReports();
+    refreshUnitPropertyOptions();
+    save();
+  }
+
+  function openModal(id) {
+    const modal = $(id);
+    if (modal) modal.classList.add("open");
+  }
+
+  function closeModal(id) {
+    const modal = $(id);
+    if (modal) modal.classList.remove("open");
+  }
+
+  function refreshUnitPropertyOptions() {
+    const select = $("unitPropertySelect");
+    if (!select) return;
+    if (!state.properties.length) {
+      select.innerHTML = '<option value="">أضف عقارًا أولًا</option>';
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
+    select.innerHTML = state.properties
+      .map(property => `<option value="${property.id}">${property.name}</option>`)
+      .join("");
+  }
+
+  function deleteRecord(type, id) {
+    if (type === "property") {
+      const property = state.properties.find(item => item.id === id);
+      if (!property) return;
+      const linkedUnits = state.units.filter(unit => unit.propertyId === id || unit.property === property.name);
+      const message = linkedUnits.length
+        ? `سيتم حذف العقار و${linkedUnits.length} وحدة مرتبطة به. هل تريد المتابعة؟`
+        : `هل تريد حذف العقار: ${property.name}؟`;
+      if (!confirm(message)) return;
+      state.properties = state.properties.filter(item => item.id !== id);
+      state.units = state.units.filter(unit => unit.propertyId !== id && unit.property !== property.name);
+      toast("تم حذف العقار والوحدات المرتبطة");
+    } else {
+      const collectionName = `${type}s`;
+      const collection = state[collectionName];
+      if (!Array.isArray(collection)) return;
+      if (!confirm("هل تريد حذف هذا السجل؟")) return;
+      state[collectionName] = collection.filter(item => item.id !== id);
+      toast("تم الحذف");
+    }
+    renderAll();
+  }
+
+  // Navigation.
+  document.querySelectorAll("[data-page]").forEach(button =>
+    button.addEventListener("click", () => goTo(button.dataset.page))
+  );
+  document.querySelectorAll("[data-goto]").forEach(button =>
+    button.addEventListener("click", () => goTo(button.dataset.goto))
+  );
+
+  // Search/filter.
+  $("propertySearch").addEventListener("input", event => renderProperties(event.target.value));
+  $("unitSearch").addEventListener("input", renderUnits);
+  $("unitStatusFilter").addEventListener("change", renderUnits);
+  $("tenantSearch").addEventListener("input", renderTenants);
+  $("contractSearch").addEventListener("input", renderContracts);
+  $("paymentSearch").addEventListener("input", renderPayments);
+
+  // Open modals.
+  $("quickAddBtn").addEventListener("click", () => openModal("modalBackdrop"));
+  $("addPropertyBtn").addEventListener("click", () => openModal("modalBackdrop"));
+  $("closeModal").addEventListener("click", () => closeModal("modalBackdrop"));
+  $("addUnitBtn").addEventListener("click", () => {
+    refreshUnitPropertyOptions();
+    if (!state.properties.length) {
+      alert("أضف عقارًا أولًا قبل إضافة وحدة.");
+      goTo("properties");
+      return;
+    }
+    openModal("unitModal");
+  });
+  $("addTenantBtn").addEventListener("click", () => openModal("tenantModal"));
+  $("addContractBtn").addEventListener("click", () => openModal("contractModal"));
+  $("addPaymentBtn").addEventListener("click", () => openModal("paymentModal"));
+  $("addMaintenanceBtn").addEventListener("click", () => openModal("maintenanceModal"));
+
+  document.querySelectorAll(".modal-close").forEach(button =>
+    button.addEventListener("click", () => button.closest(".modal-backdrop").classList.remove("open"))
+  );
+  document.querySelectorAll(".modal-backdrop").forEach(backdrop =>
+    backdrop.addEventListener("click", event => {
+      if (event.target === backdrop) backdrop.classList.remove("open");
+    })
+  );
+
+  // Forms.
+  $("propertyForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    state.properties.push({
+      id: `property-${Date.now()}`,
+      name: form.get("name").trim(),
+      city: form.get("city").trim(),
+      district: form.get("district").trim(),
+      units: 0,
+      occupied: 0,
+      type: form.get("type"),
+      income: Number(form.get("income") || 0)
+    });
+    event.target.reset();
+    closeModal("modalBackdrop");
+    renderAll();
+    goTo("properties");
+    toast("تمت إضافة العقار");
+  });
+
+  $("unitForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const property = state.properties.find(item => item.id === form.get("property"));
+    if (!property) {
+      alert("اختر عقارًا صحيحًا.");
+      return;
+    }
+    state.units.unshift({
+      id: `unit-${Date.now()}`,
+      name: form.get("name").trim(),
+      propertyId: property.id,
+      property: property.name,
+      type: form.get("type"),
+      rent: Number(form.get("rent") || 0),
+      status: form.get("status")
+    });
+    event.target.reset();
+    closeModal("unitModal");
+    renderAll();
+    toast("تمت إضافة الوحدة");
+  });
+
+  $("tenantForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    state.tenants.unshift({
+      id: `tenant-${Date.now()}`,
+      name: form.get("name").trim(),
+      phone: form.get("phone").trim(),
+      unit: form.get("unit").trim(),
+      status: form.get("status")
+    });
+    event.target.reset();
+    closeModal("tenantModal");
+    renderAll();
+    toast("تمت إضافة المستأجر");
+  });
+
+  $("contractForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const id = `contract-${Date.now()}`;
+    state.contracts.unshift({
+      id,
+      displayId: `C-${String(Date.now()).slice(-5)}`,
+      tenant: form.get("tenant").trim(),
+      unit: form.get("unit").trim(),
+      start: form.get("start"),
+      end: form.get("end"),
+      status: form.get("status")
+    });
+    event.target.reset();
+    closeModal("contractModal");
+    renderAll();
+    toast("تم إنشاء العقد");
+  });
+
+  $("paymentForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    state.payments.unshift({
+      id: `payment-${Date.now()}`,
+      tenant: form.get("tenant").trim(),
+      unit: form.get("unit").trim(),
+      amount: Number(form.get("amount") || 0),
+      status: form.get("status"),
+      date: form.get("date")
+    });
+    event.target.reset();
+    closeModal("paymentModal");
+    renderAll();
+    toast("تم تسجيل الدفعة");
+  });
+
+  $("maintenanceForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    state.maintenance.unshift({
+      id: `maintenance-${Date.now()}`,
+      title: form.get("title").trim(),
+      unit: form.get("unit").trim(),
+      priority: form.get("priority"),
+      status: form.get("status"),
+      date: form.get("date")
+    });
+    event.target.reset();
+    closeModal("maintenanceModal");
+    renderAll();
+    toast("تم إنشاء طلب الصيانة");
+  });
+
+  // One reliable delegated delete handler for all pages.
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-delete][data-id]");
+    if (!button) return;
+    deleteRecord(button.dataset.delete, button.dataset.id);
+  });
+
+  renderAll();
 })();

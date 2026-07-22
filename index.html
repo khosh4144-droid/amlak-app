@@ -34,7 +34,7 @@
         <div class="avatar">م</div>
         <div>
           <strong>مدير النظام</strong>
-          <small>حساب محلي</small>
+          <small>حساب تجريبي</small>
         </div>
       </div>
     </aside>
@@ -46,7 +46,7 @@
           <p id="pageSubtitle">ملخص شامل لأداء أملاكك</p>
         </div>
         <div class="top-actions">
-          <button class="icon-btn" id="notificationsBtn" title="التنبيهات" aria-label="التنبيهات">🔔<span class="badge" id="notificationCount">0</span></button>
+          <button class="icon-btn" title="التنبيهات">🔔<span class="badge">3</span></button>
           <button class="primary-btn" id="quickAddBtn">＋ إضافة عقار</button>
         </div>
       </header>
@@ -55,27 +55,27 @@
         <div class="kpi-grid">
           <article class="card kpi">
             <span class="kpi-label">إجمالي العقارات</span>
-            <strong id="kpiProperties">0</strong>
+            <strong id="kpiProperties">18</strong>
             <small>عقار</small>
           </article>
           <article class="card kpi">
             <span class="kpi-label">إجمالي الوحدات</span>
-            <strong id="kpiUnits">0</strong>
+            <strong id="kpiUnits">64</strong>
             <small>وحدة</small>
           </article>
           <article class="card kpi success">
             <span class="kpi-label">نسبة الإشغال</span>
-            <strong id="kpiOccupancy">0%</strong>
-            <small>من الوحدات</small>
+            <strong id="kpiOccupancy">87%</strong>
+            <small>ممتازة</small>
           </article>
           <article class="card kpi">
             <span class="kpi-label">الدخل الشهري</span>
-            <strong id="kpiIncome">0</strong>
+            <strong id="kpiIncome">125,750</strong>
             <small>ر.س</small>
           </article>
           <article class="card kpi danger">
             <span class="kpi-label">المتأخرات</span>
-            <strong id="kpiLate">0</strong>
+            <strong id="kpiLate">24,350</strong>
             <small>ر.س</small>
           </article>
         </div>
@@ -87,7 +87,10 @@
                 <h2>الإيرادات الشهرية</h2>
                 <p>آخر 6 أشهر</p>
               </div>
-              <select id="yearSelect" aria-label="سنة الإيرادات"></select>
+              <select id="yearSelect">
+                <option>2026</option>
+                <option>2025</option>
+              </select>
             </div>
             <div class="line-chart">
               <div class="y-labels"><span>150K</span><span>100K</span><span>50K</span><span>0</span></div>
@@ -98,10 +101,14 @@
                   <line x1="40" y1="150" x2="580" y2="150"/>
                   <line x1="40" y1="210" x2="580" y2="210"/>
                 </g>
-                <polyline id="incomeChartLine" points="" />
-                <g class="dots" id="incomeChartDots"></g>
+                <polyline points="55,175 150,145 245,150 340,110 435,125 565,70" />
+                <g class="dots">
+                  <circle cx="55" cy="175" r="5"/><circle cx="150" cy="145" r="5"/>
+                  <circle cx="245" cy="150" r="5"/><circle cx="340" cy="110" r="5"/>
+                  <circle cx="435" cy="125" r="5"/><circle cx="565" cy="70" r="5"/>
+                </g>
               </svg>
-              <div class="x-labels" id="incomeChartLabels"></div>
+              <div class="x-labels"><span>يناير</span><span>فبراير</span><span>مارس</span><span>أبريل</span><span>مايو</span><span>يونيو</span></div>
             </div>
           </article>
 
@@ -112,9 +119,9 @@
             <div class="donut-wrap">
               <div class="donut" id="donutChart"></div>
               <div class="legend">
-                <div><i class="dot occupied"></i><span>مشغولة</span><strong id="occupiedCount">0</strong></div>
-                <div><i class="dot vacant"></i><span>شاغرة</span><strong id="vacantCount">0</strong></div>
-                <div><i class="dot service"></i><span>تحت الصيانة</span><strong id="serviceCount">0</strong></div>
+                <div><i class="dot occupied"></i><span>مشغولة</span><strong id="occupiedCount">56</strong></div>
+                <div><i class="dot vacant"></i><span>شاغرة</span><strong id="vacantCount">6</strong></div>
+                <div><i class="dot service"></i><span>تحت الصيانة</span><strong id="serviceCount">2</strong></div>
               </div>
             </div>
           </article>
@@ -143,8 +150,8 @@
           <article class="card late-card">
             <h2>المتأخرات</h2>
             <p>إجمالي المتأخرات</p>
-            <strong class="late-total" id="lateTotal">0 <small>ر.س</small></strong>
-            <div class="mini-stat"><span>عدد الدفعات المتأخرة</span><b id="latePaymentsCount">0</b></div>
+            <strong class="late-total" id="lateTotal">24,350 <small>ر.س</small></strong>
+            <div class="mini-stat"><span>عدد المستأجرين المتأخرين</span><b>7</b></div>
             <button class="secondary-btn" data-goto="payments">عرض جميع المتأخرات</button>
           </article>
         </div>
@@ -262,29 +269,27 @@
         <div class="settings-grid">
           <article class="card settings-card">
             <h2>بيانات المنشأة</h2>
-            <form id="settingsForm">
-              <label>اسم المنشأة<input name="companyName" /></label>
-              <label>الرقم الضريبي<input name="taxNumber" placeholder="اختياري" /></label>
-              <label>رقم التواصل<input name="contactNumber" inputmode="tel" /></label>
-              <button class="primary-btn" type="submit">حفظ التغييرات</button>
-            </form>
+            <label>اسم المنشأة<input value="شركة إدارة أملاك" /></label>
+            <label>الرقم الضريبي<input placeholder="اختياري" /></label>
+            <label>رقم التواصل<input value="05xxxxxxxx" /></label>
+            <button class="primary-btn">حفظ التغييرات</button>
           </article>
           <article class="card settings-card">
             <h2>التنبيهات</h2>
-            <label class="switch-row"><span>تنبيه قرب انتهاء العقد</span><input id="notifyContracts" type="checkbox" /></label>
-            <label class="switch-row"><span>تنبيه تأخر السداد</span><input id="notifyPayments" type="checkbox" /></label>
-            <label class="switch-row"><span>تنبيه طلبات الصيانة</span><input id="notifyMaintenance" type="checkbox" /></label>
+            <label class="switch-row"><span>تنبيه قرب انتهاء العقد</span><input type="checkbox" checked /></label>
+            <label class="switch-row"><span>تنبيه تأخر السداد</span><input type="checkbox" checked /></label>
+            <label class="switch-row"><span>تنبيه طلبات الصيانة</span><input type="checkbox" checked /></label>
           </article>
         </div>
       </section>
     </main>
 
-    <nav class="mobile-nav" aria-label="التنقل على الجوال">
+    <nav class="mobile-nav">
       <button class="active" data-page="dashboard">⌂<small>الرئيسية</small></button>
       <button data-page="properties">▦<small>العقارات</small></button>
-      <button data-page="units">▤<small>الوحدات</small></button>
       <button data-page="payments">▣<small>الدفعات</small></button>
-      <button id="mobileMoreBtn" type="button">•••<small>المزيد</small></button>
+      <button data-page="maintenance">⚒<small>الصيانة</small></button>
+      <button data-page="settings">•••<small>المزيد</small></button>
     </nav>
   </div>
 
@@ -295,18 +300,18 @@
         <button id="closeModal" class="icon-btn">✕</button>
       </div>
       <form id="propertyForm">
-        <input type="hidden" name="id" />
         <label>اسم العقار<input name="name" required placeholder="مثال: عمارة النخيل" /></label>
         <div class="form-grid">
           <label>المدينة<input name="city" required value="جدة" /></label>
           <label>الحي<input name="district" required placeholder="الحي" /></label>
         </div>
         <div class="form-grid">
+          <label>عدد الوحدات<input name="units" type="number" min="1" required value="8" /></label>
           <label>نوع العقار
             <select name="type"><option>عمارة</option><option>مجمع تجاري</option><option>فيلا</option><option>مكاتب</option></select>
           </label>
         </div>
-        <label>الإيراد الشهري المتوقع<input name="income" type="number" min="0" required value="0" /></label>
+        <label>الإيراد الشهري المتوقع<input name="income" type="number" min="0" required value="24000" /></label>
         <button class="primary-btn wide" type="submit">حفظ العقار</button>
       </form>
     </div>
@@ -318,7 +323,6 @@
     <div class="modal">
       <div class="modal-head"><h2>إضافة وحدة</h2><button class="icon-btn modal-close">✕</button></div>
       <form id="unitForm">
-        <input type="hidden" name="id" />
         <label>اسم أو رقم الوحدة<input name="name" required placeholder="مثال: شقة 101" /></label>
         <label>العقار
           <select name="property" id="unitPropertySelect" required></select>
@@ -342,7 +346,7 @@
             <option>تحت الصيانة</option>
           </select>
         </label>
-        <button class="primary-btn wide" type="submit">حفظ الوحدة</button>
+        <button class="primary-btn wide">حفظ الوحدة</button>
       </form>
     </div>
   </div>
@@ -351,12 +355,11 @@
     <div class="modal">
       <div class="modal-head"><h2>إضافة مستأجر</h2><button class="icon-btn modal-close">✕</button></div>
       <form id="tenantForm">
-        <input type="hidden" name="id" />
         <label>اسم المستأجر<input name="name" required /></label>
         <label>رقم الجوال<input name="phone" required inputmode="tel" /></label>
-        <label>الوحدة<select name="unitId" id="tenantUnitSelect" required></select></label>
+        <label>الوحدة<input name="unit" required placeholder="مثال: شقة 101 - عمارة النخيل" /></label>
         <label>حالة السداد<select name="status"><option>مدفوع</option><option>متأخر</option></select></label>
-        <button class="primary-btn wide" type="submit">حفظ المستأجر</button>
+        <button class="primary-btn wide">حفظ المستأجر</button>
       </form>
     </div>
   </div>
@@ -365,15 +368,14 @@
     <div class="modal">
       <div class="modal-head"><h2>إنشاء عقد</h2><button class="icon-btn modal-close">✕</button></div>
       <form id="contractForm">
-        <input type="hidden" name="id" />
-        <label>المستأجر<select name="tenantId" id="contractTenantSelect" required></select></label>
-        <label>الوحدة<select name="unitId" id="contractUnitSelect" required></select></label>
+        <label>المستأجر<input name="tenant" required /></label>
+        <label>الوحدة<input name="unit" required /></label>
         <div class="form-grid">
           <label>تاريخ البداية<input type="date" name="start" required /></label>
           <label>تاريخ النهاية<input type="date" name="end" required /></label>
         </div>
-        <label>الحالة<select name="status"><option>ساري</option><option>قريب الانتهاء</option><option>منتهي</option></select></label>
-        <button class="primary-btn wide" type="submit">حفظ العقد</button>
+        <label>الحالة<select name="status"><option>ساري</option><option>قريب الانتهاء</option></select></label>
+        <button class="primary-btn wide">حفظ العقد</button>
       </form>
     </div>
   </div>
@@ -382,14 +384,14 @@
     <div class="modal">
       <div class="modal-head"><h2>تسجيل دفعة</h2><button class="icon-btn modal-close">✕</button></div>
       <form id="paymentForm">
-        <input type="hidden" name="id" />
-        <label>العقد<select name="contractId" id="paymentContractSelect" required></select></label>
+        <label>المستأجر<input name="tenant" required /></label>
+        <label>العقار / الوحدة<input name="unit" required /></label>
         <div class="form-grid">
           <label>المبلغ<input type="number" min="0" name="amount" required /></label>
           <label>التاريخ<input type="date" name="date" required /></label>
         </div>
         <label>الحالة<select name="status"><option>مدفوع</option><option>متأخر</option></select></label>
-        <button class="primary-btn wide" type="submit">حفظ الدفعة</button>
+        <button class="primary-btn wide">حفظ الدفعة</button>
       </form>
     </div>
   </div>
@@ -398,24 +400,16 @@
     <div class="modal">
       <div class="modal-head"><h2>طلب صيانة</h2><button class="icon-btn modal-close">✕</button></div>
       <form id="maintenanceForm">
-        <input type="hidden" name="id" />
         <label>عنوان الطلب<input name="title" required /></label>
-        <label>الوحدة<select name="unitId" id="maintenanceUnitSelect" required></select></label>
+        <label>العقار / الوحدة<input name="unit" required /></label>
         <div class="form-grid">
           <label>الأولوية<select name="priority"><option>منخفضة</option><option>متوسطة</option><option>عالية</option></select></label>
           <label>الحالة<select name="status"><option>جديد</option><option>قيد التنفيذ</option><option>مكتمل</option></select></label>
         </div>
         <label>التاريخ<input type="date" name="date" required /></label>
-        <button class="primary-btn wide" type="submit">حفظ الطلب</button>
+        <button class="primary-btn wide">حفظ الطلب</button>
       </form>
     </div>
-  </div>
-  <div id="moreMenu" class="more-menu" hidden>
-    <button data-page="tenants">المستأجرون</button>
-    <button data-page="contracts">العقود</button>
-    <button data-page="maintenance">الصيانة</button>
-    <button data-page="reports">التقارير</button>
-    <button data-page="settings">الإعدادات</button>
   </div>
   <script src="app.js"></script>
 </body>
